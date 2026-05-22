@@ -1,6 +1,6 @@
 {
   "name": "@freelensapp/pod-scheduling-advisor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Pod Scheduling Advisor extension for FreeLens",
   "main": "out/main/index.js",
   "renderer": "out/renderer/index.js",
