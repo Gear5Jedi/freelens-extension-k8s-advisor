@@ -1,0 +1,148 @@
+import { Renderer } from "@freelensapp/extensions";
+
+export interface Diagnosis {
+  category: "Runtime" | "Scheduling" | "Network/Storage" | "Healthy" | "Unknown";
+  likelyCause: string;
+  confidence: "High" | "Medium" | "Low";
+  evidence: string[];
+  suggestedActions: string[];
+}
+
+export function diagnosePod(pod: Renderer.K8sApi.Pod, events: Renderer.K8sApi.KubeEvent[]): Diagnosis {
+  // 1. Healthy Check
+  const containerStatuses = pod.getContainerStatuses() || [];
+  if (pod.getStatusMessage() === "Running" && containerStatuses.every(c => c.ready)) {
+    return {
+      category: "Healthy",
+      likelyCause: "Pod is healthy",
+      confidence: "High",
+      evidence: ["Observed: All containers are ready", "Observed: Pod status is Running"],
+      suggestedActions: []
+    };
+  }
+
+  // 2. Container Statuses (Runtime / Network / Storage)
+  for (const status of containerStatuses) {
+    if (status.state?.waiting) {
+      const reason = status.state.waiting.reason;
+      if (reason === "CrashLoopBackOff") {
+        return {
+          category: "Runtime",
+          likelyCause: "CrashLoopBackOff",
+          confidence: "High",
+          evidence: [
+            `Observed: Container ${status.name} is in CrashLoopBackOff`,
+            `Observed: Previous exit code: ${status.lastState?.terminated?.exitCode || "Unknown"}`,
+            `Inferred: The application is crashing continuously shortly after startup.`
+          ],
+          suggestedActions: [
+            "Check application logs for fatal exceptions",
+            "Verify configuration and environment variables"
+          ]
+        };
+      }
+      if (reason === "ImagePullBackOff" || reason === "ErrImagePull") {
+        return {
+          category: "Network/Storage",
+          likelyCause: "ImagePullBackOff",
+          confidence: "High",
+          evidence: [
+            `Observed: Container ${status.name} failed to pull image ${status.image}`,
+            `Inferred: The container runtime cannot retrieve the specified image from the registry.`
+          ],
+          suggestedActions: [
+            "Check if image tag exists in registry",
+            "Verify ImagePullSecrets",
+            "Check node network connectivity to registry"
+          ]
+        };
+      }
+      if (reason === "CreateContainerConfigError") {
+        return {
+          category: "Runtime",
+          likelyCause: "Missing ConfigMap or Secret",
+          confidence: "High",
+          evidence: [
+            `Observed: Container ${status.name} failed to create config`,
+            `Inferred: A required ConfigMap or Secret is missing in the namespace.`
+          ],
+          suggestedActions: [
+            "Verify all referenced ConfigMaps and Secrets exist in the namespace"
+          ]
+        };
+      }
+    }
+    
+    if (status.state?.terminated || status.lastState?.terminated) {
+      const termState = status.state?.terminated || status.lastState?.terminated;
+      if (termState?.exitCode === 137) {
+        return {
+          category: "Runtime",
+          likelyCause: "OOMKilled",
+          confidence: "High",
+          evidence: [
+            `Observed: Exit Code: 137`,
+            `Inferred: Killed by kernel OOM. Memory limit reached.`
+          ],
+          suggestedActions: [
+            `Increase limit:\nresources:\n  limits:\n    memory: (higher value)`
+          ]
+        };
+      }
+    }
+  }
+
+  // 3. Event Analysis (Scheduling / Network)
+  for (const event of events) {
+    if (event.reason === "FailedScheduling") {
+      return {
+        category: "Scheduling",
+        likelyCause: "FailedScheduling",
+        confidence: "High",
+        evidence: [`Observed: ${event.message}`, `Inferred: The scheduler cannot find a suitable node for this pod.`],
+        suggestedActions: [
+          "Check Node resources (CPU/Memory)",
+          "Check Node selectors, affinities, and taints",
+          "Provision more nodes"
+        ]
+      };
+    }
+    if (event.reason === "FailedMount") {
+      return {
+        category: "Network/Storage",
+        likelyCause: "FailedMount",
+        confidence: "High",
+        evidence: [`Observed: ${event.message}`, `Inferred: The volume mount cannot be attached to the pod.`],
+        suggestedActions: [
+          "Check if PVC is bound",
+          "Check if underlying storage class/provisioner is healthy",
+          "Verify secrets/configmaps mounted exist"
+        ]
+      };
+    }
+    if (event.message.includes("probe failed")) {
+      return {
+        category: "Runtime",
+        likelyCause: "Probe Failure",
+        confidence: "Medium",
+        evidence: [`Observed: ${event.message}`, `Inferred: The container is running but failing its health checks.`],
+        suggestedActions: [
+          "Check if application is deadlocked or overloaded",
+          "Increase probe timeout or initialDelaySeconds",
+          "Check dependent services (DB, Redis, etc.)"
+        ]
+      }
+    }
+  }
+
+  return {
+    category: "Unknown",
+    likelyCause: "Unknown",
+    confidence: "Low",
+    evidence: ["No definitive patterns matched"],
+    suggestedActions: [
+      "Review Pod Events manually",
+      "Review Application Logs"
+    ]
+  };
+}

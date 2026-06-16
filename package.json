@@ -1,0 +1,38 @@
+{
+  "name": "freelens-extension-k8s-advisor",
+  "version": "1.0.2",
+  "description": "Pod Scheduling Advisor extension for FreeLens",
+  "main": "out/main/index.js",
+  "renderer": "out/renderer/index.js",
+  "files": [
+    "out/**/*"
+  ],
+  "engines": {
+    "node": ">= 22.14.0",
+    "freelens": "^1.3.0"
+  },
+  "scripts": {
+    "build": "electron-vite build",
+    "build-extension": "npm version patch && npm run build && npm pack"
+  },
+  "devDependencies": {
+    "@electron-toolkit/tsconfig": "^1.0.1",
+    "@freelensapp/extensions": "^1.3.0",
+    "@types/node": "^22.15.24",
+    "@types/react": "^17.0.87",
+    "@vitejs/plugin-react": "^4.5.0",
+    "electron-vite": "^3.1.0",
+    "typescript": "5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-css-injected-by-js": "^5.0.1",
+    "vite-plugin-external": "^6.2.2"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.16.0",
+    "mobx": "^6.13.7",
+    "mobx-react": "^9.2.0",
+    "recharts": "^3.8.1",
+    "tailwind-merge": "^3.6.0"
+  }
+}
